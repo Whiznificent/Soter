@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from schemas.common import AnchorMetadata
 
 from schemas.envelope import ResultEnvelope
 
@@ -22,6 +23,7 @@ class ProofOfLifeRequest(BaseModel):
     selfie_image_base64: str
     burst_images_base64: Optional[List[str]] = None
     confidence_threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    anchor_metadata: Optional[AnchorMetadata] = None
 
 
 class ProofOfLifeResponse(ResultEnvelope):

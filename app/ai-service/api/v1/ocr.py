@@ -5,18 +5,21 @@ Extracted from the legacy flat router so the route logic lives in a
 single place and is referenced by both the /v1 and the legacy /ai mounts.
 """
 
+import base64
 import io
 import time
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
-import metrics
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
+from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from schemas.ocr import OCRData, OCRFieldResult, OCRResponse
-from services.ocr import OCRService
+import tasks
+from schemas.ocr import OCRResponse
+from services.ocr_job import run_ocr_from_bytes
+from config import settings
 
 router = APIRouter(tags=["ocr"])
 limiter = Limiter(key_func=get_remote_address)
@@ -30,14 +33,20 @@ ALLOWED_CONTENT_TYPES = {
     "image/webp",
 }
 
-ocr_service = OCRService()
+class QueuedOCRResponse(BaseModel):
+    success: bool
+    task_id: str
+    status: str
+    message: str
+    status_url: str
 
 
 @router.post("/ai/ocr")
-@limiter.limit("10/minute")
+@limiter.limit(settings.request_rate_limit)
 async def process_ocr(
     request: Request,
     image: Annotated[UploadFile, File(description="Image file to process")],
+    anchor_metadata: Annotated[Optional[str], Form(description="JSON encoded AnchorMetadata")] = None,
 ) -> OCRResponse:
     """Extract text fields from an uploaded document image."""
     start_time = time.time()
@@ -67,7 +76,8 @@ async def process_ocr(
                 },
             )
 
-        from PIL import Image
+        _validate_image_bytes(contents)
+        result = run_ocr_from_bytes(contents, anchor_metadata)
 
         try:
             img = Image.open(io.BytesIO(contents))
