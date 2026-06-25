@@ -8,8 +8,8 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from schemas.common import AnchorMetadata
 
+from schemas.common import AnchorMetadata
 from schemas.envelope import ResultEnvelope
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,8 @@ class ProofOfLifeRequest(BaseModel):
 
 class ProofOfLifeResponse(ResultEnvelope):
     """
-    Proof-of-life analysis response – includes the standardised result envelope (Issue #609).
+    Proof-of-life analysis response – includes the standardised result envelope
+    (Issue #609).
 
     Backward-compatible: existing fields (is_real_person, confidence, threshold,
     checks, reason) are preserved alongside the new envelope fields.
@@ -39,6 +40,7 @@ class ProofOfLifeResponse(ResultEnvelope):
     threshold: float
     checks: Dict[str, Any]
     reason: str  # kept for backward compat; also surfaced as reasons[0]
+    # anchor_metadata inherited from ResultEnvelope (AnchorMetadata type)
 
 
 @router.post("/ai/proof-of-life", response_model=ProofOfLifeResponse)
@@ -50,7 +52,6 @@ async def analyze_proof_of_life(request: ProofOfLifeRequest):
     are provided, the service additionally checks for liveness signals
     such as blink detection and head movement.
     """
-
     import main as _main
 
     trace_id = str(uuid.uuid4())
@@ -63,7 +64,7 @@ async def analyze_proof_of_life(request: ProofOfLifeRequest):
             confidence_threshold=request.confidence_threshold,
         )
 
-        # raw may be a dict or a Pydantic model; normalise to dict.
+        # Normalise to dict whether raw is a dict or Pydantic model.
         if isinstance(raw, dict):
             data = raw
         else:
@@ -73,22 +74,21 @@ async def analyze_proof_of_life(request: ProofOfLifeRequest):
         reason_str = data.get("reason", "")
 
         result_label = "real_person" if is_real else "not_real_person"
-        reasons = [reason_str] if reason_str else []
+        reasons = [reason_str] if reason_str else None
 
-        # Strip envelope keys from data so our explicit values take precedence.
-        _ENVELOPE_KEYS = {"result", "confidence", "reasons", "anchor_metadata", "trace_id"}
+        # Strip envelope keys so our explicit values take precedence.
+        _ENVELOPE_KEYS = {
+            "result", "confidence", "reasons", "anchor_metadata", "trace_id"
+        }
         safe_data = {k: v for k, v in data.items() if k not in _ENVELOPE_KEYS}
 
         return ProofOfLifeResponse(
             **safe_data,
             # Standard result envelope fields (Issue #609)
             result=result_label,
-            # confidence is a required field in ProofOfLifeResponse, already in safe_data
-            reasons=reasons or None,
-            anchor_metadata={
-                "threshold": data.get("threshold"),
-                "checks": data.get("checks"),
-            },
+            # confidence is a required field already in safe_data
+            reasons=reasons,
+            anchor_metadata=request.anchor_metadata,
             trace_id=trace_id,
         )
     except ValueError as e:

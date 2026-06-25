@@ -1,8 +1,8 @@
 from typing import Dict, Optional
 
 from pydantic import BaseModel, Field
-from schemas.common import AnchorMetadata
 
+from schemas.common import AnchorMetadata
 from schemas.envelope import ResultEnvelope
 
 
@@ -26,4 +26,4 @@ class AnonymizeResponse(ResultEnvelope):
     original_length: int
     pii_summary: PIISummary
     token_counts: Dict[str, int] = Field(default_factory=dict)
-    anchor_metadata: Optional[AnchorMetadata] = None
+    # anchor_metadata is inherited from ResultEnvelope (AnchorMetadata type)

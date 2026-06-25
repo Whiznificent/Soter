@@ -1,7 +1,8 @@
 from typing import Any, Dict, List, Literal, Optional
-from pydantic import BaseModel, Field
-from schemas.common import AnchorMetadata
 
+from pydantic import BaseModel, Field
+
+from schemas.common import AnchorMetadata
 from schemas.envelope import ResultEnvelope
 
 
@@ -10,12 +11,15 @@ class HumanitarianVerificationRequest(BaseModel):
     supporting_evidence: List[str] = Field(default_factory=list)
     context_factors: Dict[str, Any] = Field(default_factory=dict)
     provider_preference: Literal["auto", "test", "openai", "groq"] = "auto"
-    timeout: Optional[float] = Field(default=None, description="Request-level timeout in seconds for provider call")
+    timeout: Optional[float] = Field(
+        default=None,
+        description="Request-level timeout in seconds for provider call",
+    )
     anchor_metadata: Optional[AnchorMetadata] = None
 
 
 class HumanitarianVerificationResponse(ResultEnvelope):
-    """Humanitarian verification endpoint response – includes the standardised result envelope (Issue #609)."""
+    """Humanitarian verification response – includes the standardised result envelope (Issue #609)."""
 
     success: bool
     provider: Optional[str] = None
@@ -23,4 +27,4 @@ class HumanitarianVerificationResponse(ResultEnvelope):
     prompt_variant: Optional[str] = None
     verification: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
-    anchor_metadata: Optional[AnchorMetadata] = None
+    # anchor_metadata is inherited from ResultEnvelope (AnchorMetadata type)

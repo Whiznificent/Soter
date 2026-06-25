@@ -1,7 +1,8 @@
 from typing import Optional
-from pydantic import BaseModel, Field
-from schemas.common import AnchorMetadata
 
+from pydantic import BaseModel, Field
+
+from schemas.common import AnchorMetadata
 from schemas.envelope import ResultEnvelope
 
 
@@ -23,4 +24,4 @@ class OCRResponse(ResultEnvelope):
     data: OCRData | None = None
     error: dict[str, str] | None = None
     processing_time_ms: int
-    anchor_metadata: Optional[AnchorMetadata] = None
+    # anchor_metadata is inherited from ResultEnvelope (AnchorMetadata type)

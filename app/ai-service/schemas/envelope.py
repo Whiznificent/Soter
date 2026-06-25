@@ -7,38 +7,19 @@ Every AI endpoint response must carry:
                     (e.g. "ocr_complete", "real_person", "fraud_detected").
   confidence      – float in [0, 1] representing model certainty.
   reasons         – ordered list of human-readable explanation strings.
-  anchor_metadata – arbitrary key/value pairs that let callers correlate the
-                    response to their own context (claim_id, image_hash, …).
+  anchor_metadata – structured caller-correlating context (via AnchorMetadata).
   trace_id        – UUID-style request identifier for end-to-end tracing.
 
 All fields are Optional so that callers that have not yet migrated continue to
 work (no breaking change), while new consumers can rely on the full contract.
-
-Usage
------
-Inherit or compose with ``ResultEnvelope`` and populate the fields inside
-each endpoint handler::
-
-    from schemas.envelope import ResultEnvelope
-
-    class OCRResponse(OCRData, ResultEnvelope):
-        ...
-
-    # in the route handler:
-    return OCRResponse(
-        ...
-        result="ocr_complete",
-        confidence=avg_confidence,
-        reasons=["all fields extracted", "high confidence on name"],
-        anchor_metadata={"filename": image.filename},
-        trace_id=str(uuid.uuid4()),
-    )
 """
 
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
+
+from schemas.common import AnchorMetadata
 
 
 def _new_trace_id() -> str:
@@ -63,9 +44,9 @@ class ResultEnvelope(BaseModel):
         default=None,
         description="Ordered list of human-readable explanation strings.",
     )
-    anchor_metadata: Optional[Dict[str, Any]] = Field(
+    anchor_metadata: Optional[AnchorMetadata] = Field(
         default=None,
-        description="Caller-supplied or service-derived key/value context.",
+        description="Structured caller-correlating context.",
     )
     trace_id: Optional[str] = Field(
         default_factory=_new_trace_id,

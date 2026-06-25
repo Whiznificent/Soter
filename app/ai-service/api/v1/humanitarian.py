@@ -54,17 +54,20 @@ async def verify_humanitarian_claim(request: HumanitarianVerificationRequest):
         verdict = verification.get("verdict")
         summary = verification.get("summary")
 
-        result_label = f"humanitarian_{verdict}" if verdict else "humanitarian_verified"
+        result_label = (
+            f"humanitarian_{verdict}" if verdict else "humanitarian_verified"
+        )
 
-        reasons: list[str] = []
+        reasons = []
         if verdict:
             reasons.append(f"Verdict: {verdict}")
         if summary:
             reasons.append(summary)
 
-        # Strip any envelope-conflicting keys from the service result dict before
-        # spreading, so our explicit envelope values always take precedence.
-        _ENVELOPE_KEYS = {"result", "confidence", "reasons", "anchor_metadata", "trace_id"}
+        # Strip envelope keys so our explicit values take precedence.
+        _ENVELOPE_KEYS = {
+            "result", "confidence", "reasons", "anchor_metadata", "trace_id"
+        }
         safe_result = {k: v for k, v in result.items() if k not in _ENVELOPE_KEYS}
 
         return HumanitarianVerificationResponse(
@@ -74,11 +77,7 @@ async def verify_humanitarian_claim(request: HumanitarianVerificationRequest):
             result=result_label,
             confidence=confidence,
             reasons=reasons or None,
-            anchor_metadata={
-                "provider": result.get("provider"),
-                "model": result.get("model"),
-                "prompt_variant": result.get("prompt_variant"),
-            },
+            anchor_metadata=request.anchor_metadata,
             trace_id=trace_id,
         )
     except Exception as e:
@@ -88,5 +87,6 @@ async def verify_humanitarian_claim(request: HumanitarianVerificationRequest):
             error=str(e),
             result="humanitarian_error",
             reasons=[str(e)],
+            anchor_metadata=request.anchor_metadata,
             trace_id=trace_id,
         )

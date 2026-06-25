@@ -1,7 +1,8 @@
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
-from schemas.common import AnchorMetadata
 
+from pydantic import BaseModel, Field
+
+from schemas.common import AnchorMetadata
 from schemas.envelope import ResultEnvelope
 
 
@@ -31,4 +32,4 @@ class FraudDetectionResponse(ResultEnvelope):
 
     results: List[ClaimFraudResult]
     flagged_count: int
-    anchor_metadata: Optional[AnchorMetadata] = None
+    # anchor_metadata is inherited from ResultEnvelope (AnchorMetadata type)

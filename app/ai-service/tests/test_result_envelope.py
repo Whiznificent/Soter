@@ -5,7 +5,7 @@ Every AI endpoint response must include:
   result          – str label for the AI decision
   confidence      – float in [0, 1] OR None (for deterministic/rule-based endpoints)
   reasons         – list of explanation strings OR None
-  anchor_metadata – dict of correlating context OR None
+  anchor_metadata – AnchorMetadata object OR None
   trace_id        – UUID-style string
 
 Acceptance criteria:
@@ -30,13 +30,15 @@ from schemas.envelope import ResultEnvelope
 client = TestClient(app, follow_redirects=True)
 
 UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
 )
 
 
 # ---------------------------------------------------------------------------
 # Fixture: always report healthy resources so throttle never fires
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(autouse=True)
 def _healthy_resources():
@@ -48,20 +50,18 @@ def _healthy_resources():
 # Helper
 # ---------------------------------------------------------------------------
 
-def assert_envelope(data: dict, *, has_confidence: bool = True) -> None:
+
+def assert_envelope(data: dict) -> None:
     """Assert all standard envelope keys are present and well-formed."""
-    assert "result" in data, f"Missing 'result' in response: {list(data.keys())}"
-    assert "reasons" in data, f"Missing 'reasons' in response: {list(data.keys())}"
-    assert "anchor_metadata" in data, f"Missing 'anchor_metadata' in response: {list(data.keys())}"
-    assert "trace_id" in data, f"Missing 'trace_id' in response: {list(data.keys())}"
-    assert "confidence" in data, f"Missing 'confidence' in response: {list(data.keys())}"
+    for key in ("result", "reasons", "anchor_metadata", "trace_id", "confidence"):
+        assert key in data, f"Missing '{key}' in response: {list(data.keys())}"
 
     assert data["trace_id"] is not None, "trace_id must not be None"
     assert UUID_RE.match(str(data["trace_id"])), (
         f"trace_id does not look like a UUID: {data['trace_id']}"
     )
 
-    if has_confidence and data["confidence"] is not None:
+    if data["confidence"] is not None:
         assert 0.0 <= data["confidence"] <= 1.0, (
             f"confidence out of [0, 1] range: {data['confidence']}"
         )
@@ -79,9 +79,11 @@ def assert_envelope(data: dict, *, has_confidence: bool = True) -> None:
 # 1. OCR endpoint
 # ---------------------------------------------------------------------------
 
+
 class TestOCREnvelope:
     def _post_image(self, color="white", size=(100, 100)):
         from PIL import Image as PILImage
+
         img = PILImage.new("RGB", size, color=color)
         buf = io.BytesIO()
         img.save(buf, format="PNG")
@@ -93,8 +95,7 @@ class TestOCREnvelope:
             files={"image": ("test.png", self._post_image(), "image/png")},
         )
         assert response.status_code == 200
-        data = response.json()
-        assert_envelope(data)
+        assert_envelope(response.json())
 
     def test_ocr_result_label(self):
         response = client.post(
@@ -106,12 +107,15 @@ class TestOCREnvelope:
 
     def test_ocr_trace_id_unique_per_request(self):
         img = self._post_image()
-        r1 = client.post("/v1/ai/ocr", files={"image": ("t.png", img, "image/png")})
-        r2 = client.post("/v1/ai/ocr", files={"image": ("t.png", img, "image/png")})
+        r1 = client.post(
+            "/v1/ai/ocr", files={"image": ("t.png", img, "image/png")}
+        )
+        r2 = client.post(
+            "/v1/ai/ocr", files={"image": ("t.png", img, "image/png")}
+        )
         assert r1.json()["trace_id"] != r2.json()["trace_id"]
 
     def test_ocr_backward_compat_fields_still_present(self):
-        """Existing fields must not disappear."""
         response = client.post(
             "/v1/ai/ocr",
             files={"image": ("test.png", self._post_image(), "image/png")},
@@ -134,13 +138,14 @@ class TestOCREnvelope:
 # 2. Anonymize endpoint
 # ---------------------------------------------------------------------------
 
+
 class TestAnonymizeEnvelope:
     PAYLOAD = {"text": "On 1 Jan 2025, Jane Doe received aid in Lagos."}
 
     def test_anonymize_envelope_fields_present(self):
         response = client.post("/v1/ai/anonymize", json=self.PAYLOAD)
         assert response.status_code == 200
-        assert_envelope(response.json(), has_confidence=False)
+        assert_envelope(response.json())
 
     def test_anonymize_result_label(self):
         data = client.post("/v1/ai/anonymize", json=self.PAYLOAD).json()
@@ -161,10 +166,20 @@ class TestAnonymizeEnvelope:
         for key in ("success", "anonymized_text", "original_length", "pii_summary"):
             assert key in data, f"Legacy field '{key}' missing"
 
+    def test_anonymize_anchor_metadata_passthrough(self):
+        """anchor_metadata from the request is echoed back in the response."""
+        payload = {
+            "text": "Jane Doe received aid in Lagos.",
+            "anchor_metadata": {"claim_id": "C999"},
+        }
+        data = client.post("/v1/ai/anonymize", json=payload).json()
+        assert data["anchor_metadata"]["claim_id"] == "C999"
+
 
 # ---------------------------------------------------------------------------
 # 3. Humanitarian endpoint
 # ---------------------------------------------------------------------------
+
 
 class TestHumanitarianEnvelope:
     PAYLOAD = {
@@ -176,8 +191,13 @@ class TestHumanitarianEnvelope:
 
     @pytest.fixture
     def fake_verify(self, monkeypatch):
-        def _verify(aid_claim, supporting_evidence=None, context_factors=None,
-                    provider_preference="auto", **_):
+        def _verify(
+            aid_claim,
+            supporting_evidence=None,
+            context_factors=None,
+            provider_preference="auto",
+            **_,
+        ):
             return {
                 "provider": "openai",
                 "model": "gpt-4o-mini",
@@ -189,7 +209,10 @@ class TestHumanitarianEnvelope:
                 },
                 "raw_response": "{}",
             }
-        monkeypatch.setattr(main.humanitarian_verification_service, "verify_claim", _verify)
+
+        monkeypatch.setattr(
+            main.humanitarian_verification_service, "verify_claim", _verify
+        )
 
     def test_humanitarian_envelope_fields_present(self, fake_verify):
         response = client.post("/v1/ai/humanitarian/verify", json=self.PAYLOAD)
@@ -219,10 +242,11 @@ class TestHumanitarianEnvelope:
             assert key in data, f"Legacy field '{key}' missing"
 
     def test_humanitarian_error_path_has_envelope(self, monkeypatch):
+        def _fail(**_):
+            raise RuntimeError("provider unavailable")
+
         monkeypatch.setattr(
-            main.humanitarian_verification_service,
-            "verify_claim",
-            lambda **_: (_ for _ in ()).throw(RuntimeError("provider unavailable")),
+            main.humanitarian_verification_service, "verify_claim", _fail
         )
         data = client.post("/v1/ai/humanitarian/verify", json=self.PAYLOAD).json()
         assert data["success"] is False
@@ -233,6 +257,7 @@ class TestHumanitarianEnvelope:
 # ---------------------------------------------------------------------------
 # 4. Fraud detection endpoint
 # ---------------------------------------------------------------------------
+
 
 class TestFraudEnvelope:
     PAYLOAD = {
@@ -270,24 +295,30 @@ class TestFraudEnvelope:
         for key in ("results", "flagged_count"):
             assert key in data, f"Legacy field '{key}' missing"
 
-    def test_fraud_anchor_metadata_has_counts(self):
-        data = client.post("/v1/fraud/detect", json=self.PAYLOAD).json()
-        meta = data.get("anchor_metadata") or {}
-        assert "total_claims" in meta
-        assert "flagged_count" in meta
+    def test_fraud_anchor_metadata_passthrough(self):
+        payload = {
+            "claims": [{"claim_id": "C001", "amount": 50.0}],
+            "anchor_metadata": {"campaign_ref": "CAM-42"},
+        }
+        data = client.post("/v1/fraud/detect", json=payload).json()
+        assert data["anchor_metadata"]["campaign_ref"] == "CAM-42"
 
 
 # ---------------------------------------------------------------------------
 # 5. Proof-of-life endpoint
 # ---------------------------------------------------------------------------
 
+
 class TestProofOfLifeEnvelope:
     PAYLOAD = {"selfie_image_base64": "dGVzdA=="}
 
     @pytest.fixture
     def fake_analyze(self, monkeypatch):
-        def _analyze(selfie_image_base64, burst_images_base64=None,
-                     confidence_threshold=None):
+        def _analyze(
+            selfie_image_base64,
+            burst_images_base64=None,
+            confidence_threshold=None,
+        ):
             return {
                 "is_real_person": True,
                 "confidence": 0.93,
@@ -295,6 +326,7 @@ class TestProofOfLifeEnvelope:
                 "checks": {"face_detected": True, "blink_detected": False},
                 "reason": "Face detected with high confidence",
             }
+
         monkeypatch.setattr(main.proof_of_life_analyzer, "analyze", _analyze)
 
     def test_proof_of_life_envelope_fields_present(self, fake_analyze):
@@ -325,9 +357,12 @@ class TestProofOfLifeEnvelope:
         for key in ("is_real_person", "confidence", "threshold", "checks", "reason"):
             assert key in data, f"Legacy field '{key}' missing"
 
-    def test_proof_of_life_not_real_person_result_label(self, monkeypatch):
-        def _not_real(selfie_image_base64, burst_images_base64=None,
-                      confidence_threshold=None):
+    def test_proof_of_life_not_real_person(self, monkeypatch):
+        def _not_real(
+            selfie_image_base64,
+            burst_images_base64=None,
+            confidence_threshold=None,
+        ):
             return {
                 "is_real_person": False,
                 "confidence": 0.22,
@@ -335,14 +370,24 @@ class TestProofOfLifeEnvelope:
                 "checks": {"face_detected": False},
                 "reason": "No face detected",
             }
+
         monkeypatch.setattr(main.proof_of_life_analyzer, "analyze", _not_real)
         data = client.post("/v1/ai/proof-of-life", json=self.PAYLOAD).json()
         assert data["result"] == "not_real_person"
+
+    def test_proof_of_life_anchor_metadata_passthrough(self, fake_analyze):
+        payload = {
+            "selfie_image_base64": "dGVzdA==",
+            "anchor_metadata": {"claim_id": "C123"},
+        }
+        data = client.post("/v1/ai/proof-of-life", json=payload).json()
+        assert data["anchor_metadata"]["claim_id"] == "C123"
 
 
 # ---------------------------------------------------------------------------
 # 6. Schema-level validation – ResultEnvelope
 # ---------------------------------------------------------------------------
+
 
 class TestResultEnvelopeSchema:
     def test_confidence_below_zero_rejected(self):

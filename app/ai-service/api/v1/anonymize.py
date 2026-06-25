@@ -39,7 +39,9 @@ async def anonymize_text(request: AnonymizeRequest):
             reasons.append("No PII detected in input")
 
         # Strip envelope keys so our explicit values take precedence.
-        _ENVELOPE_KEYS = {"result", "confidence", "reasons", "anchor_metadata", "trace_id"}
+        _ENVELOPE_KEYS = {
+            "result", "confidence", "reasons", "anchor_metadata", "trace_id"
+        }
         safe_result = {k: v for k, v in result.items() if k not in _ENVELOPE_KEYS}
 
         return AnonymizeResponse(
@@ -49,10 +51,7 @@ async def anonymize_text(request: AnonymizeRequest):
             result="anonymization_complete",
             confidence=None,  # rule-based; no probabilistic confidence
             reasons=reasons,
-            anchor_metadata={
-                "original_length": result.get("original_length"),
-                "pii_total": total_redacted,
-            },
+            anchor_metadata=request.anchor_metadata,
             trace_id=trace_id,
         )
     except Exception as e:

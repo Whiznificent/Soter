@@ -16,11 +16,13 @@ router = APIRouter(tags=["fraud"])
 
 
 @router.post("/fraud/detect", response_model=FraudDetectionResponse)
-async def detect_fraud_endpoint(request: FraudDetectionRequest) -> FraudDetectionResponse:
+async def detect_fraud_endpoint(
+    request: FraudDetectionRequest,
+) -> FraudDetectionResponse:
     """
     Analyse a batch of claims for suspicious patterns.
 
-    Returns a ``fraud_risk_score`` (0–1) for each claim.  Claims that are
+    Returns a ``fraud_risk_score`` (0-1) for each claim.  Claims that are
     statistical outliers relative to the batch are flagged with
     ``is_flagged=true``.
     """
@@ -30,16 +32,18 @@ async def detect_fraud_endpoint(request: FraudDetectionRequest) -> FraudDetectio
         results = detect_fraud(request.claims)
         flagged_count = sum(r.is_flagged for r in results)
 
-        # Derive top-level confidence as 1 - mean fraud risk score (ensemble certainty).
+        # Derive top-level confidence as 1 - mean fraud risk score.
         if results:
             mean_risk = sum(r.fraud_risk_score for r in results) / len(results)
             confidence = round(1.0 - mean_risk, 4)
         else:
             confidence = None
 
-        result_label = "fraud_detected" if flagged_count > 0 else "no_fraud_detected"
+        result_label = (
+            "fraud_detected" if flagged_count > 0 else "no_fraud_detected"
+        )
 
-        reasons: list[str] = [f"Analysed {len(results)} claim(s)"]
+        reasons = [f"Analysed {len(results)} claim(s)"]
         if flagged_count:
             reasons.append(f"{flagged_count} claim(s) flagged as suspicious")
             flagged_ids = [r.claim_id for r in results if r.is_flagged]
@@ -55,10 +59,7 @@ async def detect_fraud_endpoint(request: FraudDetectionRequest) -> FraudDetectio
             result=result_label,
             confidence=confidence,
             reasons=reasons,
-            anchor_metadata={
-                "total_claims": len(results),
-                "flagged_count": flagged_count,
-            },
+            anchor_metadata=request.anchor_metadata,
             trace_id=trace_id,
         )
     except Exception as exc:
